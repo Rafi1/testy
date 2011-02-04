@@ -1,0 +1,195 @@
+#ifndef __DECIMAL_HH__
+#define __DECIMAL_HH__
+/******************************************************************************/
+// auth. rafi $Id:$
+// Class Decimal - bcd numbers.
+/******************************************************************************/
+#include <iostream>
+#include <sstream>
+#define  DECNUMDIGITS 25           // work with up to xx digits
+extern "C" {
+#include "decNumber.h"
+}
+/******************************************************************************/
+static decContext *_initContext(void){
+  static decContext set;
+
+  decContextDefault(&set, DEC_INIT_BASE);         // initialize
+  set.traps=0;                                    // no traps
+  set.digits= DECNUMDIGITS;                       // precision 25
+  return &set;
+}
+static decContext *_SET= _initContext();
+/******************************************************************************/
+class Decimal{
+public:
+  Decimal(void){
+    decNumberFromInt32(&_num, 0);
+  }
+  Decimal(const char *str){
+    decNumberFromString(&_num, str, _SET);
+  }
+  Decimal(std::string &str){
+    decNumberFromString(&_num, str.c_str(), _SET);
+  }
+  Decimal(double number, int digits){
+    //create decimal from rounded double with digits
+    decNumber a;
+    decNumber r;
+    std::stringstream ss;
+    std::string str;
+    ss << number;
+    ss >> str;
+    decNumberFromInt32(&r, -digits);
+    decNumberFromString(&a, str.c_str(), _SET);
+
+    decNumberRescale(&_num, &a, &r, _SET); 
+  }
+  Decimal operator+(const Decimal &op){
+    decNumber a;
+    decNumberAdd(&a, &_num, &op._num, _SET);
+    return Decimal(&a);
+  }
+  Decimal operator-(const Decimal &op){
+    decNumber a;
+    decNumberSubtract(&a, &_num, &op._num, _SET);
+    return Decimal(&a);
+  }
+  void operator+=(const Decimal &op){
+    decNumberAdd(&_num, &_num, &op._num, _SET);
+  }
+  void operator-=(const Decimal &op){
+    decNumberSubtract(&_num, &_num, &op._num, _SET);
+  }
+  Decimal operator*(const Decimal &op){
+    decNumber a;
+    decNumberMultiply(&a, &_num, &op._num, _SET);
+    return Decimal(&a);
+  }
+  Decimal operator/(const Decimal &op){
+    decNumber a;
+    decNumberDivide(&a, &_num, &op._num, _SET);
+    return Decimal(&a);
+  }
+  Decimal round(int digits){
+    decNumber a;
+    decNumber r;
+
+    decNumberFromInt32(&r, -digits);
+
+    decNumberRescale(&a, &_num, &r, _SET); 
+    return Decimal(&a);
+  }
+  int operator==(const Decimal &op){
+    decNumber ret_num;
+    decNumberCompare(&ret_num, &_num, &op._num, _SET);
+    return decNumberIsZero(&ret_num);
+  }
+  int operator!=(const Decimal &op){
+    decNumber ret_num;
+    decNumberCompare(&ret_num, &_num, &op._num, _SET);
+    return !decNumberIsZero(&ret_num);
+  }
+  int operator<(const Decimal &op){
+    decNumber ret_num;
+    decNumberCompare(&ret_num, &_num, &op._num, _SET);
+    return decNumberIsNegative(&ret_num);
+  }
+  int operator>(const Decimal &op){
+    decNumber ret_num;
+    decNumberCompare(&ret_num, &op._num, &_num, _SET);
+    return decNumberIsNegative(&ret_num);
+  }
+  int operator<=(const Decimal &op){
+    decNumber ret_num;
+    decNumberCompare(&ret_num, &op._num, &_num, _SET);
+    return !decNumberIsNegative(&ret_num);
+  }
+  int operator>=(const Decimal &op){
+    decNumber ret_num;
+    decNumberCompare(&ret_num, &_num, &op._num, _SET);
+    return !decNumberIsNegative(&ret_num);
+  }
+  int is_zero(void){
+    return decNumberIsZero(&_num);
+  }
+  std::string to_str(void){
+    char intBuffer[DECNUMDIGITS+14];
+    decNumberToString(&_num, intBuffer);
+    return std::string(intBuffer);
+  }
+private:
+  Decimal(decNumber *num){
+    _num= *num;
+  };
+  decNumber _num;
+};
+/******************************************************************************/
+#ifdef SOCI_H_INCLUDED
+namespace soci {
+    template <> struct type_conversion<Decimal> {
+        typedef std::string base_type;
+
+        static void from_base(std::string str, indicator ind, Decimal &dec) {
+            if (ind == i_null) {
+                //throw soci_error("Null value not allowed for this type");
+                dec= Decimal();
+            } else 
+              dec= Decimal(str);
+        }
+
+        static void to_base(const Decimal &dec, std::string &str,
+                                  indicator & ind) {
+            Decimal d1(dec);
+            str= d1.to_str();
+            ind = i_ok;
+        }
+    };
+}
+#else
+#warning "SOCI not included!"
+#endif /*SOCI_H_INCLUDED*/
+/******************************************************************************/
+#if 1
+inline std::string TO_STR(double num){
+    std::stringstream ss;
+    std::string str;
+    ss << num;
+    ss >> str;
+
+  //clog<<"Convert: "<<num<<" to: <"<<str<<">\n";
+  return std::string(str);
+}
+inline double TO_DBL(std::string str){
+  std::stringstream ss;
+  double result= 0.5;
+    ss << str;
+    ss >> result;
+  //clog<<"Convert: <"<<str<<"> to: "<<result<<"\n";
+  return result;
+}
+inline Decimal F2D(double f){
+    std::stringstream ss;
+    std::string str;
+    ss << f;
+    ss >> str;
+  return Decimal(str);
+}
+inline double D2F(Decimal dec){
+  std::string str= dec.to_str();
+  std::stringstream ss;
+  double result= 0;
+  ss<<str;
+  ss>>result;
+  return result;
+}
+#endif
+inline Decimal I2D(long i){
+    std::stringstream ss;
+    std::string str;
+    ss << i;
+    ss >> str;
+  return Decimal(str);
+}
+/******************************************************************************/
+#endif /*__DECIMAL_HH__*/
